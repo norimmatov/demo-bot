@@ -84,7 +84,10 @@ bot.action("clear", async (ctx) => {
 bot.action("order", async (ctx) => {
   await ctx.answerCbQuery();
   userOrderSteps.set(ctx.from.id, { step: "WAIT_CONTACT" });
-  await ctx.reply("Buyurtmani rasmiylashtirish uchun telefon raqamingizni yuboring:", Markup.keyboard([[Markup.button.contactRequest("📱 Raqamni yuborish")]]).resize().oneTime());
+  await ctx.reply(
+    "Buyurtmani rasmiylashtirish uchun telefon raqamingizni yuboring:",
+    Markup.keyboard([[Markup.button.contactRequest("📱 Raqamni yuborish")]]).resize().oneTime()
+  );
 });
 
 bot.on("contact", async (ctx) => {
@@ -114,32 +117,40 @@ bot.on("location", async (ctx) => {
   state.step = "WAIT_PAYMENT";
   userOrderSteps.set(ctx.from.id, state);
 
-  await ctx.reply("Joylashuv qabul qilindi ✅\nTo'lov turini tanlang:", Markup.inlineKeyboard([
-    [Markup.button.callback("💵 Naqd pul", "pay:naqd")],
-    [Markup.button.callback("💳 Payme / Click", "pay:karta")],
-  ]));
+  await ctx.reply(
+    "Joylashuv qabul qilindi ✅\nTo'lov turini tanlang:",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("💵 Naqd pul", "pay:naqd")],
+      [Markup.button.callback("💳 Payme / Click", "pay:karta")],
+    ])
+  );
 });
 
+// MATNLI XABARLARNI QABUL QILISH (TUZATILGAN QISM)
 bot.on("text", async (ctx, next) => {
   const state = userOrderSteps.get(ctx.from.id);
-  if (state) {
-    if (state.step === "WAIT_ADDRESS_CHOICE" && ctx.message.text === "✍️ Qo‘lda yozib kiritaman") {
-      state.step = "WAIT_TEXT_ADDRESS";
-      userOrderSteps.set(ctx.from.id, state);
-      return ctx.reply("Iltimos, manzilingizni batafsil yozib yuboring:");
-    }
+  if (!state) return next();
 
-    if (state.step === "WAIT_TEXT_ADDRESS") {
-      state.address = ctx.message.text;
-      state.step = "WAIT_PAYMENT";
-      userOrderSteps.set(ctx.from.id, state);
+  if (state.step === "WAIT_ADDRESS_CHOICE" && ctx.message.text === "✍️ Qo‘lda yozib kiritaman") {
+    state.step = "WAIT_TEXT_ADDRESS";
+    userOrderSteps.set(ctx.from.id, state);
+    return ctx.reply("Iltimos, manzilingizni batafsil yozib yuboring:", Markup.removeKeyboard());
+  }
 
-      return ctx.reply("Manzil qabul qilindi ✅\nTo'lov turini tanlang:", Markup.inlineKeyboard([
+  if (state.step === "WAIT_TEXT_ADDRESS") {
+    state.address = ctx.message.text;
+    state.step = "WAIT_PAYMENT";
+    userOrderSteps.set(ctx.from.id, state);
+
+    return ctx.reply(
+      "Manzil qabul qilindi ✅\nTo'lov turini tanlang:",
+      Markup.inlineKeyboard([
         [Markup.button.callback("💵 Naqd pul", "pay:naqd")],
         [Markup.button.callback("💳 Payme / Click", "pay:karta")],
-      ]));
-    }
+      ])
+    );
   }
+
   return next();
 });
 
@@ -208,7 +219,10 @@ bot.action(/^pay:(naqd|karta)$/, async (ctx) => {
 });
 
 bot.catch((err) => console.error("Bot xatosi:", err));
-bot.launch().then(() => console.log("Bot muvaffaqiyatli ishga tushdi ✅"));
+
+bot.launch()
+  .then(() => console.log("Bot muvaffaqiyatli ishga tushdi ✅"))
+  .catch((err) => console.error("Botni ishga tushirishda xato:", err));
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));

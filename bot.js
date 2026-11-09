@@ -1,61 +1,68 @@
 require("dotenv").config();
 const { Telegraf, Markup } = require("telegraf");
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 
-// ---- Render.com uchun HTTP Server (Port topolmay to'xtab qolmasligi uchun) ----
+// Render.com uchun HTTP server
 const PORT = process.env.PORT || 3000;
 http
   .createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Bot serverda 24/7 muvaffaqiyatli ishlamoqda! 🚀");
+    res.end("Bot 24/7 muvaffaqiyatli ishlamoqda! 🚀");
   })
-  .listen(PORT, () => {
-    console.log(`HTTP server ${PORT}-portda ishga tushdi.`);
-  });
+  .listen(PORT, () => console.log(`HTTP server ${PORT}-portda ishlamoqda.`));
 
-// ---- Botni retsializatsiya qilish ----
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_ID = process.env.ADMIN_ID ? Number(process.env.ADMIN_ID) : null;
 
-// ---- Menyu ma'lumotlari ----
-const MENU = {
-  "☕ Ichimliklar": [
-    { id: "d1", name: "Americano", price: 18000 },
-    { id: "d2", name: "Cappuccino", price: 22000 },
-    { id: "d3", name: "Ko‘k choy", price: 8000 },
-  ],
-  "🍰 Shirinliklar": [
-    { id: "s1", name: "Cheesecake", price: 25000 },
-    { id: "s2", name: "Tiramisu", price: 28000 },
-  ],
-  "🍔 Taomlar": [
-    { id: "t1", name: "Burger", price: 35000 },
-    { id: "t2", name: "Lag‘mon", price: 30000 },
-  ],
-};
+// JSON fayldan menyuni o'qish va saqlash funksiyalari
+const MENU_FILE = path.join(__dirname, "menu.json");
 
-const CAFE_INFO =
-  "📍 Samarqand, Registon ko‘chasi 1\n📞 +998 90 123 45 67\n🕙 Har kuni 09:00–23:00";
+function loadMenu() {
+  try {
+    if (!fs.existsSync(MENU_FILE)) {
+      fs.writeFileSync(MENU_FILE, JSON.stringify({}));
+    }
+    return JSON.parse(fs.readFileSync(MENU_FILE, "utf8"));
+  } catch (e) {
+    console.error("Menu o'qishda xato:", e);
+    return {};
+  }
+}
 
-// ---- Yordamchi o'zgaruvchi va funksiyalar ----
-const CATS = Object.keys(MENU);
-const ITEMS = Object.fromEntries(
-  Object.values(MENU).flat().map((i) => [i.id, i])
-);
-const carts = new Map(); // userId -> { itemId: soni }
+function saveMenu(menu) {
+  try {
+    fs.writeFileSync(MENU_FILE, JSON.stringify(menu, null, 2), "utf8");
+  } catch (e) {
+    console.error("Menu saqlashda xato:", e);
+  }
+}
+
+let MENU = loadMenu();
+const CAFE_INFO = "📍 Samarqand, Registon ko‘chasi 1\n📞 +998 90 123 45 67\n🕙 09:00–23:00";
+
+const carts = new Map();
+const userStates = new Map(); // Admin bosqichlarini saqlash uchun
 
 const fmt = (n) => n.toLocaleString("ru-RU") + " so‘m";
-
 const getCart = (uid) => {
   if (!carts.has(uid)) carts.set(uid, {});
   return carts.get(uid);
 };
 
+function getFlatItems() {
+  const items = {};
+  Object.values(MENU).flat().forEach((i) => (items[i.id] = i));
+  return items;
+}
+
 function cartInfo(cart) {
+  const items = getFlatItems();
   let total = 0;
   const lines = Object.entries(cart)
     .map(([id, qty]) => {
-      const it = ITEMS[id];
+      const it = items[id];
       if (!it) return null;
       total += it.price * qty;
       return `${it.name} × ${qty} = ${fmt(it.price * qty)}`;
@@ -68,42 +75,122 @@ function cartInfo(cart) {
   };
 }
 
-// Asosiy tugmalar (Reply Keyboard)
-const mainKeyboard = Markup.keyboard([
-  ["🍽 Menyu", "🛒 Savat"],
-  ["📞 Aloqa"],
-]).resize();
+// Tugmalar
+const getMainMenu = (userId) => {
+  const buttons = [["🍽 Menyu", "🛒 Savat"], ["📞 Aloqa"]];
+  if (userId === ADMIN_ID) {
+    buttons.push(["⚙️ Admin Panel"]);
+  }
+  return Markup.keyboard(buttons).resize();
+};
 
-// ---- Buyruqlar va hodisalar ----
-
-// /start
+// Start
 bot.start((ctx) =>
   ctx.reply(
-    `Assalomu alaykum, ${ctx.from.first_name}! 👋\nKafemizga xush kelibsiz. Menyudan tanlang va buyurtma bering.`,
-    mainKeyboard
+    `Assalomu alaykum, ${ctx.from.first_name}! 👋\nKafemizga xush kelibsiz.`,
+    getMainMenu(ctx.from.id)
   )
 );
 
-// Admin ID sini aniqlash uchun /id buyrug'i
-bot.command("id", (ctx) => ctx.reply(`Sizning Telegram ID ingiz: ${ctx.chat.id}`));
-
-// Aloqa
+bot.command("id", (ctx) => ctx.reply(`Sizning ID ingiz: ${ctx.chat.id}`));
 bot.hears("📞 Aloqa", (ctx) => ctx.reply(CAFE_INFO));
 
-// Menyu bo'limlarini ko'rsatish
-bot.hears("🍽 Menyu", (ctx) =>
+// ---- ADMIN PANEL MANTIQLARI ----
+bot.hears("⚙️ Admin Panel", (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return ctx.reply("Siz admin emassiz ❌");
+  return ctx.reply(
+    "🛠 Admin boshqaruv paneli:",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("➕ Yangi taom qo'shish", "admin_add")],
+      [Markup.button.callback("🗑 Taomni o'chirish", "admin_delete")],
+    ])
+  );
+});
+
+// Taom qo'shish bosqichlari
+bot.action("admin_add", async (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return;
+  await ctx.answerCbQuery();
+  const cats = Object.keys(MENU);
+  
+  userStates.set(ctx.from.id, { step: "WAIT_NAME" });
+  await ctx.reply(
+    "Yangi taom nomini kiriting:\n(Masalan: Lavash)"
+  );
+});
+
+// Admin matn kiritganda ushlash
+bot.on("text", async (ctx, next) => {
+  const state = userStates.get(ctx.from.id);
+  if (!state || ctx.from.id !== ADMIN_ID) return next();
+
+  if (state.step === "WAIT_NAME") {
+    state.name = ctx.message.text;
+    state.step = "WAIT_PRICE";
+    userStates.set(ctx.from.id, state);
+    return ctx.reply(`"${state.name}" narxini faqat raqamlarda kiriting (masalan: 25000):`);
+  }
+
+  if (state.step === "WAIT_PRICE") {
+    const price = Number(ctx.message.text.replace(/\D/g, ""));
+    if (!price) return ctx.reply("Iltimos, faqat raqam kiriting!");
+    
+    state.price = price;
+    state.step = "WAIT_CAT";
+    userStates.set(ctx.from.id, state);
+
+    const cats = Object.keys(MENU);
+    return ctx.reply(
+      "Kategoriyani tanlang:",
+      Markup.inlineKeyboard(
+        cats.map((c, i) => [Markup.button.callback(c, "add_cat:" + i)])
+      )
+    );
+  }
+
+  return next();
+});
+
+// Kategoriya tanlanganda taomni saqlash
+bot.action(/^add_cat:(\d+)$/, async (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return;
+  const state = userStates.get(ctx.from.id);
+  if (!state || state.step !== "WAIT_CAT") return;
+
+  const cats = Object.keys(MENU);
+  const cat = cats[Number(ctx.match[1])];
+
+  const newItem = {
+    id: "item_" + Date.now(),
+    name: state.name,
+    price: state.price,
+    photo: ""
+  };
+
+  MENU[cat].push(newItem);
+  saveMenu(MENU);
+  userStates.delete(ctx.from.id);
+
+  await ctx.answerCbQuery();
+  await ctx.reply(`✅ "${newItem.name}" muvaffaqiyatli qo'shildi!`, getMainMenu(ctx.from.id));
+});
+
+// ---- FOYDALANUVCHILAR UCHUN MENYU ----
+bot.hears("🍽 Menyu", (ctx) => {
+  MENU = loadMenu();
+  const cats = Object.keys(MENU);
   ctx.reply(
     "Bo‘limni tanlang:",
     Markup.inlineKeyboard(
-      CATS.map((c, i) => [Markup.button.callback(c, "cat:" + i)])
+      cats.map((c, i) => [Markup.button.callback(c, "cat:" + i)])
     )
-  )
-);
+  );
+});
 
-// Kategoriya tanlanganda mahsulotlarni chiqarish
 bot.action(/^cat:(\d+)$/, async (ctx) => {
-  const catIndex = Number(ctx.match[1]);
-  const cat = CATS[catIndex];
+  MENU = loadMenu();
+  const cats = Object.keys(MENU);
+  const cat = cats[Number(ctx.match[1])];
   if (!cat) return ctx.answerCbQuery("Bo'lim topilmadi");
 
   await ctx.answerCbQuery();
@@ -117,17 +204,72 @@ bot.action(/^cat:(\d+)$/, async (ctx) => {
   );
 });
 
-// Mahsulotni savatga qo'shish
 bot.action(/^add:(\w+)$/, (ctx) => {
+  const items = getFlatItems();
   const id = ctx.match[1];
-  if (!ITEMS[id]) return ctx.answerCbQuery("Mahsulot topilmadi");
+  if (!items[id]) return ctx.answerCbQuery("Mahsulot topilmadi");
 
   const cart = getCart(ctx.from.id);
   cart[id] = (cart[id] || 0) + 1;
-  return ctx.answerCbQuery(`${ITEMS[id].name} savatga qo‘shildi ✅`);
+  return ctx.answerCbQuery(`${items[id].name} savatga qo‘shildi ✅`);
 });
 
-// Savatni ko'rish
 bot.hears("🛒 Savat", (ctx) => {
   const info = cartInfo(getCart(ctx.from.id));
-  if (info.empty) return ctx.reply("Savat ho
+  if (info.empty) return ctx.reply("Savat hozircha bo‘sh 🙂");
+
+  return ctx.reply(
+    "🛒 Sizning savatingiz:\n\n" + info.text,
+    Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Buyurtma berish", "order")],
+      [Markup.button.callback("🗑 Tozalash", "clear")],
+    ])
+  );
+});
+
+bot.action("clear", async (ctx) => {
+  carts.delete(ctx.from.id);
+  await ctx.answerCbQuery();
+  await ctx.editMessageText("Savat tozalandi 🗑");
+});
+
+bot.action("order", async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    "Buyurtmani tasdiqlash uchun telefon raqamingizni yuboring:",
+    Markup.keyboard([[Markup.button.contactRequest("📱 Raqamni yuborish")]])
+      .resize()
+      .oneTime()
+  );
+});
+
+bot.on("contact", async (ctx) => {
+  const info = cartInfo(getCart(ctx.from.id));
+  if (info.empty) return ctx.reply("Savat bo‘sh.", getMainMenu(ctx.from.id));
+
+  const msg =
+    `🆕 Yangi buyurtma!\n` +
+    `👤 Mijoz: ${ctx.from.first_name}\n` +
+    `📞 Tel: ${ctx.message.contact.phone_number}\n\n` +
+    info.text;
+
+  const targetAdmin = ADMIN_ID || ctx.chat.id;
+
+  try {
+    await ctx.telegram.sendMessage(targetAdmin, msg);
+    carts.delete(ctx.from.id);
+    await ctx.reply(
+      "Rahmat! Buyurtmangiz qabul qilindi ✅\nTez orada siz bilan bog‘lanamiz.",
+      getMainMenu(ctx.from.id)
+    );
+  } catch (error) {
+    console.error(error);
+    await ctx.reply("Xatolik yuz berdi.", getMainMenu(ctx.from.id));
+  }
+});
+
+bot.catch((err) => console.error("Bot xatosi:", err));
+bot.launch().then(() => console.log("Bot ishga tushdi ✅"));
+
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));

@@ -1,47 +1,113 @@
-const fs = require("fs");
-const path = require("path");
+const mongoose = require("mongoose");
+const { MONGO_URI } = require("./config");
 
-const MENU_FILE = path.join(__dirname, "menu.json");
-const ORDERS_FILE = path.join(__dirname, "orders.json");
+if (MONGO_URI) {
+  mongoose
+    .connect(MONGO_URI)
+    .then(() => console.log("MongoDB ga muvaffaqiyatli ulandik ✅"))
+    .catch((err) => console.error("MongoDB ulanish xatosi:", err));
+} else {
+  console.log("MONGO_URI topilmadi!");
+}
 
-function loadMenu() {
+const menuSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  category: { type: String, required: true },
+  name: { type: String, required: true },
+  price: { type: Number, required: true },
+});
+
+const orderCounterSchema = new mongoose.Schema({
+  _id: { type: String, default: "order_id" },
+  lastOrderId: { type: Number, default: 1000 },
+});
+
+const MenuItem = mongoose.model("MenuItem", menuSchema);
+const OrderCounter = mongoose.model("OrderCounter", orderCounterSchema);
+
+async function loadMenu() {
   try {
-    if (!fs.existsSync(MENU_FILE)) fs.writeFileSync(MENU_FILE, JSON.stringify({}));
-    return JSON.parse(fs.readFileSync(MENU_FILE, "utf8"));
+    const items = await MenuItem.find({});
+    const menu = {};
+    items.forEach((it) => {
+      if (!menu[it.category]) menu[it.category] = [];
+      menu[it.category].push({ id: it.id, name: it.name, price: it.price });
+    });
+
+    if (Object.keys(menu).length === 0) {
+      const defaultItems = [
+        { id: "d1", category: "☕ Ichimliklar", name: "Americano", price: 18000 },
+        { id: "s1", category: "🍰 Shirinliklar", name: "Cheesecake", price: 25000 },
+        { id: "t1", category: "🍔 Taomlar", name: "Burger", price: 35000 },
+      ];
+      await MenuItem.insertMany(defaultItems);
+      return {
+        "☕ Ichimliklar": [{ id: "d1", name: "Americano", price: 18000 }],
+        "🍰 Shirinliklar": [{ id: "s1", name: "Cheesecake", price: 25000 }],
+        "🍔 Taomlar": [{ id: "t1", name: "Burger", price: 35000 }],
+      };
+    }
+
+    return menu;
   } catch (e) {
     console.error("Menu o'qishda xato:", e);
     return {};
   }
 }
 
-function saveMenu(menu) {
+async function saveMenuItem(category, name, price) {
   try {
-    fs.writeFileSync(MENU_FILE, JSON.stringify(menu, null, 2), "utf8");
+    const newItem = new MenuItem({
+      id: "item_" + Date.now(),
+      category: category,
+      name: name,
+      price: price,
+    });
+    await newItem.save();
+    return newItem;
   } catch (e) {
-    console.error("Menu saqlashda xato:", e);
+    console.error("Taom saqlashda xato:", e);
   }
 }
 
-function getNextOrderId() {
+async function updateMenuItem(itemId, newName, newPrice) {
   try {
-    let data = { lastOrderId: 1000 };
-    if (fs.existsSync(ORDERS_FILE)) {
-      data = JSON.parse(fs.readFileSync(ORDERS_FILE, "utf8"));
+    const updateData = {};
+    if (newName) updateData.name = newName;
+    if (newPrice) updateData.price = newPrice;
+    await MenuItem.updateOne({ id: itemId }, { $set: updateData });
+  } catch (e) {
+    console.error("Taom tahrirlashda xato:", e);
+  }
+}
+
+async function deleteMenuItem(itemId) {
+  try {
+    await MenuItem.deleteOne({ id: itemId });
+  } catch (e) {
+    console.error("Taom o'chirishda xato:", e);
+  }
+}
+
+async function getNextOrderId() {
+  try {
+    let counter = await OrderCounter.findById("order_id");
+    if (!counter) {
+      counter = new OrderCounter({ _id: "order_id", lastOrderId: 1000 });
     }
-    data.lastOrderId = (data.lastOrderId || 1000) + 1;
-    fs.writeFileSync(ORDERS_FILE, JSON.stringify(data, null, 2), "utf8");
-    return `#ORD-${data.lastOrderId}`;
+    counter.lastOrderId += 1;
+    await counter.save();
+    return `#ORD-${counter.lastOrderId}`;
   } catch (e) {
     return `#ORD-${Date.now().toString().slice(-4)}`;
   }
 }
-// db.js faylining eng pastidagi module.exports qismini shunday o'zgartiring:
-module.exports = { 
-  loadMenu, 
-  saveMenu: saveMenuItem, // <--- shu joyi yetishmayotgan edi
-  saveMenuItem, 
-  updateMenuItem, 
-  deleteMenuItem, 
-  getNextOrderId 
-};
 
+module.exports = {
+  loadMenu,
+  saveMenu: saveMenuItem,
+  saveMenuItem,
+  updateMenuItem,
+  deleteMenuItem,
+  getNextOrderId,
+};

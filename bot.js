@@ -5,7 +5,7 @@ const { loadMenu, getNextOrderId } = require("./db");
 const { getMainMenu, buildCategoryKeyboard, buildItemsGrid, fmt } = require("./keyboards");
 const { setupAdminHandlers } = require("./admin");
 
-// HTTP Server (Render 24/7)
+// HTTP Server (Render 24/7 ishlashi uchun)
 http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
   res.end("Bot 24/7 muvaffaqiyatli ishlamoqda! 🚀");
@@ -80,7 +80,7 @@ bot.action("clear", async (ctx) => {
   await ctx.editMessageText("Savat tozalandi 🗑");
 });
 
-// BUYURTMA OQIMI
+// BUYURTMA OQIMI (Order Flow)
 bot.action("order", async (ctx) => {
   await ctx.answerCbQuery();
   userOrderSteps.set(ctx.from.id, { step: "WAIT_CONTACT" });
@@ -143,6 +143,7 @@ bot.on("text", async (ctx, next) => {
   return next();
 });
 
+// BUYURTMANI YAKUNLASH VA NAVIGATSIYA TUGMALARI BILAN ADMINGA YUBORISH
 bot.action(/^pay:(naqd|karta)$/, async (ctx) => {
   const payType = ctx.match[1] === "naqd" ? "💵 Naqd pul" : "💳 Payme / Click";
   const info = await cartInfo(getCart(ctx.from.id));
@@ -155,7 +156,10 @@ bot.action(/^pay:(naqd|karta)$/, async (ctx) => {
   const phone = state.phone || "Kiritilmadi";
   const address = state.address || "Ko'rsatilmadi";
 
+  // Mijozga Chek
   const clientReceipt = `🧾 BUYURTMA CHEKI ${orderId}\n-----------------------------------\n📅 Sana: ${now}\n👤 Mijoz: ${clientName}\n📞 Tel: ${phone}\n📍 Manzil: ${address}\n💳 To'lov: ${payType}\n-----------------------------------\n🛒 TARKIBI:\n${info.linesText}\n\n-----------------------------------\n💰 JAMI: ${info.totalFmt}\n-----------------------------------\n⏳ Holati: Qabul qilindi 🟡\n\nXaridingiz uchun rahmat! 🙌`;
+
+  // Guruhga / Adminga Bildirishnoma
   const adminNotification = `🆕 YANGI BUYURTMA ${orderId}\n-----------------------------------\n👤 Mijoz: ${clientName}\n📞 Tel: ${phone}\n📍 MANZIL: ${address}\n💳 To'lov: ${payType}\n-----------------------------------\n🛒 TAOMLAR:\n${info.linesText}\n\n💰 JAMI SUMMA: ${info.totalFmt}`;
 
   await ctx.answerCbQuery();
@@ -163,9 +167,37 @@ bot.action(/^pay:(naqd|karta)$/, async (ctx) => {
 
   const targetAdmin = ADMIN_ID || ctx.chat.id;
   try {
+    // 1. Matnli chekni adminga/guruhga yuborish
     await ctx.telegram.sendMessage(targetAdmin, adminNotification);
+
+    // 2. Geolokatsiya bo'lsa: Native xarita va Yandex/Google Navigatsiya tugmalarini yuborish
     if (state.locationCoords) {
-      await ctx.telegram.sendLocation(targetAdmin, state.locationCoords.latitude, state.locationCoords.longitude);
+      const { latitude, longitude } = state.locationCoords;
+
+      // Telegram ichidagi xarita
+      await ctx.telegram.sendLocation(targetAdmin, latitude, longitude);
+
+      // Navigatsiya inline tugmalari
+      const navButtons = Markup.inlineKeyboard([
+        [
+          Markup.button.url(
+            "🚕 Yandex Navigatsiyada ochish",
+            `https://yandex.com/maps/?pt=${longitude},${latitude}&z=17&l=map`
+          ),
+        ],
+        [
+          Markup.button.url(
+            "🗺 Google Maps'da ochish",
+            `https://maps.google.com/?q=${latitude},${longitude}`
+          ),
+        ],
+      ]);
+
+      await ctx.telegram.sendMessage(
+        targetAdmin,
+        "🗺 **Kuryer uchun navigatsiya havolalari:**",
+        { parse_mode: "Markdown", ...navButtons }
+      );
     }
   } catch (err) {
     console.error("Admin xabarnoma xatosi:", err);

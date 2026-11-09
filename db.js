@@ -35,5 +35,13 @@ function getNextOrderId() {
     return `#ORD-${Date.now().toString().slice(-4)}`;
   }
 }
+// db.js faylining eng pastidagi module.exports qismini shunday o'zgartiring:
+module.exports = { 
+  loadMenu, 
+  saveMenu: saveMenuItem, // <--- shu joyi yetishmayotgan edi
+  saveMenuItem, 
+  updateMenuItem, 
+  deleteMenuItem, 
+  getNextOrderId 
+};
 
-module.exports = { loadMenu, saveMenu, getNextOrderId };

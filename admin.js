@@ -5,7 +5,6 @@ const { loadMenu, saveMenu } = require("./db");
 const adminStates = new Map();
 
 function setupAdminHandlers(bot, getMainMenu) {
-  // Admin Paneli menyusi (CRUD)
   bot.hears("⚙️ Admin Panel", (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return ctx.reply("Siz admin emassiz ❌");
     return ctx.reply(
@@ -19,11 +18,10 @@ function setupAdminHandlers(bot, getMainMenu) {
     );
   });
 
-  // 1. READ — Taomnomani ko'rish
+  // 1. READ
   bot.action("admin_read", async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     await ctx.answerCbQuery();
-
     const MENU = loadMenu();
     let text = "📋 **Hozirgi Taomnoma Ro'yxati:**\n\n";
 
@@ -38,19 +36,18 @@ function setupAdminHandlers(bot, getMainMenu) {
       }
       text += "\n";
     }
-
     await ctx.reply(text, { parse_mode: "Markdown" });
   });
 
-  // 2. CREATE — Yangi taom qo'shish
+  // 2. CREATE
   bot.action("admin_create", async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     await ctx.answerCbQuery();
     adminStates.set(ctx.from.id, { step: "WAIT_NAME" });
-    await ctx.reply("Yangi taom nomini kiriting (masalan: Cheeseburger):");
+    await ctx.reply("Yangi taom nomini kiriting:");
   });
 
-  // 3. UPDATE — Taomni tanlash
+  // 3. UPDATE
   bot.action("admin_update", async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     await ctx.answerCbQuery();
@@ -67,12 +64,10 @@ function setupAdminHandlers(bot, getMainMenu) {
     );
   });
 
-  // Taom tanlangach: Nomini yoki Narxini tanlash imkoniyati
   bot.action(/^select_item:(\w+)$/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     const itemId = ctx.match[1];
     await ctx.answerCbQuery();
-
     await ctx.reply(
       "Nimani o'zgartirmoqchisiz?",
       Markup.inlineKeyboard([
@@ -82,25 +77,21 @@ function setupAdminHandlers(bot, getMainMenu) {
     );
   });
 
-  // Nomini o'zgartirish bosqichi
   bot.action(/^edit_name:(\w+)$/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
-    const itemId = ctx.match[1];
     await ctx.answerCbQuery();
-    adminStates.set(ctx.from.id, { step: "WAIT_NEW_NAME", itemId });
+    adminStates.set(ctx.from.id, { step: "WAIT_NEW_NAME", itemId: ctx.match[1] });
     await ctx.reply("Taom uchun yangi nomni kiriting:");
   });
 
-  // Narxini o'zgartirish bosqichi
   bot.action(/^edit_price:(\w+)$/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
-    const itemId = ctx.match[1];
     await ctx.answerCbQuery();
-    adminStates.set(ctx.from.id, { step: "WAIT_NEW_PRICE", itemId });
+    adminStates.set(ctx.from.id, { step: "WAIT_NEW_PRICE", itemId: ctx.match[1] });
     await ctx.reply("Yangi narxni faqat raqamlarda kiriting:");
   });
 
-  // 4. DELETE — Taomni o'chirish
+  // 4. DELETE
   bot.action("admin_delete", async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     await ctx.answerCbQuery();
@@ -137,12 +128,11 @@ function setupAdminHandlers(bot, getMainMenu) {
     await ctx.reply(`❌ "${deletedName}" taomnomadan o'chirildi!`, getMainMenu(ctx.from.id));
   });
 
-  // ADMIN MATN KIRITISH HODISALARI (CREATE & UPDATE uchun)
+  // Admin Matnlar bilan ishlash
   bot.on("text", async (ctx, next) => {
     const state = adminStates.get(ctx.from.id);
     if (!state || ctx.from.id !== ADMIN_ID) return next();
 
-    // CREATE: Taom nomi kelganda
     if (state.step === "WAIT_NAME") {
       state.name = ctx.message.text;
       state.step = "WAIT_PRICE";
@@ -150,29 +140,24 @@ function setupAdminHandlers(bot, getMainMenu) {
       return ctx.reply(`"${state.name}" narxini kiriting:`);
     }
 
-    // CREATE: Narx kelganda -> Kategoriya so'rash
     if (state.step === "WAIT_PRICE") {
       const price = Number(ctx.message.text.replace(/\D/g, ""));
       if (!price) return ctx.reply("Iltimos, faqat raqam kiriting!");
-
       state.price = price;
       state.step = "WAIT_CAT";
       adminStates.set(ctx.from.id, state);
 
       const MENU = loadMenu();
-      const cats = Object.keys(MENU);
       return ctx.reply(
         "Kategoriyani tanlang:",
-        Markup.inlineKeyboard(cats.map((c, i) => [Markup.button.callback(c, "add_cat:" + i)]))
+        Markup.inlineKeyboard(Object.keys(MENU).map((c, i) => [Markup.button.callback(c, "add_cat:" + i)]))
       );
     }
 
-    // UPDATE: Yangi NOM kelganda
     if (state.step === "WAIT_NEW_NAME") {
       const newName = ctx.message.text;
       const MENU = loadMenu();
       let oldName = "";
-
       for (const cat in MENU) {
         const item = MENU[cat].find((i) => i.id === state.itemId);
         if (item) {
@@ -181,20 +166,16 @@ function setupAdminHandlers(bot, getMainMenu) {
           break;
         }
       }
-
       saveMenu(MENU);
       adminStates.delete(ctx.from.id);
       return ctx.reply(`✅ "${oldName}" nomi "${newName}"ga o'zgartirildi!`, getMainMenu(ctx.from.id));
     }
 
-    // UPDATE: Yangi NARX kelganda
     if (state.step === "WAIT_NEW_PRICE") {
       const newPrice = Number(ctx.message.text.replace(/\D/g, ""));
       if (!newPrice) return ctx.reply("Faqat raqam kiriting!");
-
       const MENU = loadMenu();
       let updatedName = "";
-
       for (const cat in MENU) {
         const item = MENU[cat].find((i) => i.id === state.itemId);
         if (item) {
@@ -203,7 +184,6 @@ function setupAdminHandlers(bot, getMainMenu) {
           break;
         }
       }
-
       saveMenu(MENU);
       adminStates.delete(ctx.from.id);
       return ctx.reply(`✅ "${updatedName}" narxi ${newPrice.toLocaleString("ru-RU")} so'mga o'zgartirildi!`, getMainMenu(ctx.from.id));
@@ -212,5 +192,22 @@ function setupAdminHandlers(bot, getMainMenu) {
     return next();
   });
 
-  // CREATE: Kategoriya tanlanganda saqlash
-  bot.action(/^
+  bot.action(/^add_cat:(\d+)$/, async (ctx) => {
+    if (ctx.from.id !== ADMIN_ID) return;
+    const state = adminStates.get(ctx.from.id);
+    if (!state || state.step !== "WAIT_CAT") return;
+
+    const MENU = loadMenu();
+    const cat = Object.keys(MENU)[Number(ctx.match[1])];
+    const newItem = { id: "item_" + Date.now(), name: state.name, price: state.price };
+
+    MENU[cat].push(newItem);
+    saveMenu(MENU);
+    adminStates.delete(ctx.from.id);
+
+    await ctx.answerCbQuery();
+    await ctx.reply(`✅ "${newItem.name}" taomnomaga saqlandi!`, getMainMenu(ctx.from.id));
+  });
+}
+
+module.exports = { setupAdminHandlers };

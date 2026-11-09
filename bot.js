@@ -46,9 +46,21 @@ bot.hears("📞 Aloqa", (ctx) => ctx.reply(CAFE_INFO));
 
 // Menyu va Savat
 bot.hears("🍽 Menyu", async (ctx) => {
-  const MENU = await loadMenu();
-  ctx.reply("Bo‘limni tanlang:", buildCategoryKeyboard(Object.keys(MENU)));
+  try {
+    const MENU = await loadMenu();
+    const categories = Object.keys(MENU);
+
+    if (!categories || categories.length === 0) {
+      return ctx.reply("Hozircha taomnoma bo'sh 🙂");
+    }
+
+    return ctx.reply("Bo‘limni tanlang:", buildCategoryKeyboard(categories));
+  } catch (err) {
+    console.error("Menyu yuklashda xato:", err);
+    return ctx.reply("Menyuni yuklashda xatolik yuz berdi. Qayta urinib ko'ring.");
+  }
 });
+
 
 bot.action(/^cat:(\d+)$/, async (ctx) => {
   const MENU = await loadMenu();

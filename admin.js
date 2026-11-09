@@ -5,7 +5,7 @@ const { loadMenu, saveMenu } = require("./db");
 const adminStates = new Map();
 
 function setupAdminHandlers(bot, getMainMenu) {
-  // Admin Paneli menyusi
+  // Admin Paneli menyusi (CRUD)
   bot.hears("⚙️ Admin Panel", (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return ctx.reply("Siz admin emassiz ❌");
     return ctx.reply(
@@ -50,7 +50,7 @@ function setupAdminHandlers(bot, getMainMenu) {
     await ctx.reply("Yangi taom nomini kiriting (masalan: Cheeseburger):");
   });
 
-  // 3. UPDATE — Taom narxini tahrirlash
+  // 3. UPDATE — Taomni tanlash
   bot.action("admin_update", async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     await ctx.answerCbQuery();
@@ -60,13 +60,38 @@ function setupAdminHandlers(bot, getMainMenu) {
     if (items.length === 0) return ctx.reply("Taomnoma bo'sh.");
 
     await ctx.reply(
-      "Narxini o'zgartirmoqchi bo'lgan taomni tanlang:",
+      "Tahrirlamoqchi bo'lgan taomni tanlang:",
       Markup.inlineKeyboard(
-        items.map((i) => [Markup.button.callback(`✏️ ${i.name} (${i.price})`, "edit_price:" + i.id)])
+        items.map((i) => [Markup.button.callback(`✏️ ${i.name} (${i.price} so'm)`, "select_item:" + i.id)])
       )
     );
   });
 
+  // Taom tanlangach: Nomini yoki Narxini tanlash imkoniyati
+  bot.action(/^select_item:(\w+)$/, async (ctx) => {
+    if (ctx.from.id !== ADMIN_ID) return;
+    const itemId = ctx.match[1];
+    await ctx.answerCbQuery();
+
+    await ctx.reply(
+      "Nimani o'zgartirmoqchisiz?",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("📝 Nomini o'zgartirish", "edit_name:" + itemId)],
+        [Markup.button.callback("💵 Narxini o'zgartirish", "edit_price:" + itemId)],
+      ])
+    );
+  });
+
+  // Nomini o'zgartirish bosqichi
+  bot.action(/^edit_name:(\w+)$/, async (ctx) => {
+    if (ctx.from.id !== ADMIN_ID) return;
+    const itemId = ctx.match[1];
+    await ctx.answerCbQuery();
+    adminStates.set(ctx.from.id, { step: "WAIT_NEW_NAME", itemId });
+    await ctx.reply("Taom uchun yangi nomni kiriting:");
+  });
+
+  // Narxini o'zgartirish bosqichi
   bot.action(/^edit_price:(\w+)$/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     const itemId = ctx.match[1];
@@ -142,7 +167,27 @@ function setupAdminHandlers(bot, getMainMenu) {
       );
     }
 
-    // UPDATE: Yangi narx kelganda
+    // UPDATE: Yangi NOM kelganda
+    if (state.step === "WAIT_NEW_NAME") {
+      const newName = ctx.message.text;
+      const MENU = loadMenu();
+      let oldName = "";
+
+      for (const cat in MENU) {
+        const item = MENU[cat].find((i) => i.id === state.itemId);
+        if (item) {
+          oldName = item.name;
+          item.name = newName;
+          break;
+        }
+      }
+
+      saveMenu(MENU);
+      adminStates.delete(ctx.from.id);
+      return ctx.reply(`✅ "${oldName}" nomi "${newName}"ga o'zgartirildi!`, getMainMenu(ctx.from.id));
+    }
+
+    // UPDATE: Yangi NARX kelganda
     if (state.step === "WAIT_NEW_PRICE") {
       const newPrice = Number(ctx.message.text.replace(/\D/g, ""));
       if (!newPrice) return ctx.reply("Faqat raqam kiriting!");
@@ -168,28 +213,4 @@ function setupAdminHandlers(bot, getMainMenu) {
   });
 
   // CREATE: Kategoriya tanlanganda saqlash
-  bot.action(/^add_cat:(\d+)$/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-    const state = adminStates.get(ctx.from.id);
-    if (!state || state.step !== "WAIT_CAT") return;
-
-    const MENU = loadMenu();
-    const cats = Object.keys(MENU);
-    const cat = cats[Number(ctx.match[1])];
-
-    const newItem = {
-      id: "item_" + Date.now(),
-      name: state.name,
-      price: state.price,
-    };
-
-    MENU[cat].push(newItem);
-    saveMenu(MENU);
-    adminStates.delete(ctx.from.id);
-
-    await ctx.answerCbQuery();
-    await ctx.reply(`✅ "${newItem.name}" taomnomaga saqlandi!`, getMainMenu(ctx.from.id));
-  });
-}
-
-module.exports = { setupAdminHandlers };
+  bot.action(/^

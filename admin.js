@@ -1,24 +1,42 @@
+
 const { Markup } = require("telegraf");
 const { ADMIN_ID } = require("./config");
-const { loadMenu, saveMenuItem, updateMenuItem, deleteMenuItem } = require("./db");
+const {
+  loadMenu,
+  saveMenuItem,
+  updateMenuItem,
+  deleteMenuItem,
+} = require("./db");
 
 const adminStates = new Map();
+
+const DEFAULT_CATEGORIES = [
+  "☕ Ichimliklar",
+  "🍰 Shirinliklar",
+  "🍔 Taomlar",
+];
 
 function isAdmin(userId) {
   return ADMIN_ID && Number(userId) === Number(ADMIN_ID);
 }
 
-const DEFAULT_CATEGORIES = ["☕ Ichimliklar", "🍰 Shirinliklar", "🍔 Taomlar"];
-
-// Holatni tozalash yordamchi funksiyasi
 function clearState(userId) {
   adminStates.delete(userId);
 }
 
+function cancelButton() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("❌ Bekor qilish", "admin_cancel")],
+  ]);
+}
+
 function setupAdminHandlers(bot, getMainMenu) {
-  // Admin menyusini ko'rsatish
+  // ADMIN PANEL
   bot.hears("⚙️ Admin Panel", (ctx) => {
-    if (!isAdmin(ctx.from.id)) return ctx.reply("Siz admin emassiz ❌");
+    if (!isAdmin(ctx.from.id)) {
+      return ctx.reply("Siz admin emassiz ❌");
+    }
+
     clearState(ctx.from.id);
 
     return ctx.reply(
@@ -32,77 +50,91 @@ function setupAdminHandlers(bot, getMainMenu) {
     );
   });
 
-  // Bekor qilish tugmasi uchun handler
+  // CANCEL
   bot.action("admin_cancel", async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     clearState(ctx.from.id);
     await ctx.answerCbQuery("Jarayon bekor qilindi");
-    await ctx.reply("❌ Amallab bekor qilindi.", getMainMenu(ctx.from.id));
+    await ctx.reply("❌ Amal bekor qilindi.", getMainMenu(ctx.from.id));
   });
 
-  // READ: Menyu ro'yxati
+  // READ
   bot.action("admin_read", async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     await ctx.answerCbQuery();
 
-    const MENU = await loadMenu();
-    let text = "📋 **Hozirgi Taomnoma Ro'yxati:**\n\n";
+    const menu = await loadMenu();
+    let message = "📋 **Hozirgi Taomnoma Ro'yxati:**\n\n";
 
-    for (const [cat, items] of Object.entries(MENU)) {
-      text += `📌 **${cat}**:\n`;
+    for (const [category, items] of Object.entries(menu)) {
+      message += `📌 **${category}**:\n`;
+
       if (!items || items.length === 0) {
-        text += "  _(Bo'sh)_\n";
+        message += "  _(Bo'sh)_\n";
       } else {
-        items.forEach((it) => {
-          text += `  • ${it.name} — ${Number(it.price).toLocaleString("ru-RU")} so'm\n`;
+        items.forEach((item) => {
+          message += `  • ${item.name} — ${Number(item.price).toLocaleString("ru-RU")} so'm\n`;
         });
       }
-      text += "\n";
+
+      message += "\n";
     }
 
-    // Uzun xabar 4096 belgidan oshib ketmasligi uchun bo'laklab yuborish
-    if (text.length > 4000) {
-      const chunks = text.match(/[\s\S]{1,3900}/g) || [];
-      for (const chunk of chunks) {
-        await ctx.reply(chunk, { parse_mode: "Markdown" });
-      }
-    } else {
-      await ctx.reply(text, { parse_mode: "Markdown" });
+    const chunks =
+      message.length > 4000
+        ? message.match(/[\s\S]{1,3900}/g) || []
+        : [message];
+
+    for (const chunk of chunks) {
+      await ctx.reply(chunk, { parse_mode: "Markdown" });
     }
   });
 
-  // CREATE: Yangi taom qo'shish
+  // CREATE
   bot.action("admin_create", async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
-    await ctx.answerCbQuery();
 
+    await ctx.answerCbQuery();
     adminStates.set(ctx.from.id, { step: "WAIT_NAME" });
-    await ctx.reply(
-      "Yangi taom nomini kiriting:",
-      Markup.inlineKeyboard([[Markup.button.callback("❌ Bekor qilish", "admin_cancel")]])
-    );
+
+    await ctx.reply("Yangi taom nomini kiriting:", cancelButton());
   });
 
-  // UPDATE: Tahrirlash ro'yxati
+  // UPDATE: taom tanlash
   bot.action("admin_update", async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     await ctx.answerCbQuery();
 
-    const MENU = await loadMenu();
-    const items = Object.values(MENU).flat();
+    const menu = await loadMenu();
+    const items = Object.values(menu).flat();
 
-    if (items.length === 0) return ctx.reply("Taomnoma bo'sh.");
+    if (items.length === 0) {
+      return ctx.reply("Taomnoma bo'sh.");
+    }
 
-    const buttons = items.map((i) => [
-      Markup.button.callback(`✏️ ${i.name} (${i.price} so'm)`, `select_item:${i.id}`),
+    const buttons = items.map((item) => [
+      Markup.button.callback(
+        `✏️ ${item.name} (${item.price} so'm)`,
+        `select_item:${item.id}`
+      ),
     ]);
-    buttons.push([Markup.button.callback("❌ Bekor qilish", "admin_cancel")]);
 
-    await ctx.reply("Tahrirlamoqchi bo'lgan taomni tanlang:", Markup.inlineKeyboard(buttons));
+    buttons.push([
+      Markup.button.callback("❌ Bekor qilish", "admin_cancel"),
+    ]);
+
+    await ctx.reply(
+      "Tahrirlamoqchi bo'lgan taomni tanlang:",
+      Markup.inlineKeyboard(buttons)
+    );
   });
 
   bot.action(/^select_item:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     await ctx.answerCbQuery();
     const itemId = ctx.match[1];
 
@@ -116,133 +148,174 @@ function setupAdminHandlers(bot, getMainMenu) {
     );
   });
 
+  // Taom nomini tahrirlash
   bot.action(/^edit_name:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     await ctx.answerCbQuery();
 
-    adminStates.set(ctx.from.id, { step: "WAIT_NEW_NAME", itemId: ctx.match[1] });
-    await ctx.reply(
-      "Taom uchun yangi nomni kiriting:",
-      Markup.inlineKeyboard([[Markup.button.callback("❌ Bekor qilish", "admin_cancel")]])
-    );
+    adminStates.set(ctx.from.id, {
+      step: "WAIT_NEW_NAME",
+      itemId: ctx.match[1],
+    });
+
+    await ctx.reply("Taom uchun yangi nomni kiriting:", cancelButton());
   });
 
+  // Taom narxini tahrirlash
   bot.action(/^edit_price:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     await ctx.answerCbQuery();
 
-    adminStates.set(ctx.from.id, { step: "WAIT_NEW_PRICE", itemId: ctx.match[1] });
-    await ctx.reply(
-      "Yangi narxni raqamlarda kiriting:",
-      Markup.inlineKeyboard([[Markup.button.callback("❌ Bekor qilish", "admin_cancel")]])
-    );
+    adminStates.set(ctx.from.id, {
+      step: "WAIT_NEW_PRICE",
+      itemId: ctx.match[1],
+    });
+
+    await ctx.reply("Yangi narxni raqamlarda kiriting:", cancelButton());
   });
 
-  // DELETE: Taomni o'chirish
+  // DELETE
   bot.action("admin_delete", async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     await ctx.answerCbQuery();
 
-    const MENU = await loadMenu();
-    const items = Object.values(MENU).flat();
+    const menu = await loadMenu();
+    const items = Object.values(menu).flat();
 
-    if (items.length === 0) return ctx.reply("Taomnoma bo'sh.");
+    if (items.length === 0) {
+      return ctx.reply("Taomnoma bo'sh.");
+    }
 
-    const buttons = items.map((i) => [
-      Markup.button.callback(`🗑 ${i.name}`, `del_item:${i.id}`),
+    const buttons = items.map((item) => [
+      Markup.button.callback(`🗑 ${item.name}`, `del_item:${item.id}`),
     ]);
-    buttons.push([Markup.button.callback("❌ Bekor qilish", "admin_cancel")]);
 
-    await ctx.reply("O'chirmoqchi bo'lgan taomni tanlang:", Markup.inlineKeyboard(buttons));
+    buttons.push([
+      Markup.button.callback("❌ Bekor qilish", "admin_cancel"),
+    ]);
+
+    await ctx.reply(
+      "O'chirmoqchi bo'lgan taomni tanlang:",
+      Markup.inlineKeyboard(buttons)
+    );
   });
 
   bot.action(/^del_item:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
+
     await ctx.answerCbQuery();
 
     const itemId = ctx.match[1];
     await deleteMenuItem(itemId);
 
-    await ctx.reply(`❌ Taom taomnomadan o'chirildi!`, getMainMenu(ctx.from.id));
+    await ctx.reply(
+      "❌ Taom taomnomadan o'chirildi!",
+      getMainMenu(ctx.from.id)
+    );
   });
 
-  // KATEGORIYA BOSILGANDA SAQLASH
+  // CREATE: kategoriya tanlash
   bot.action(/^add_cat:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery();
 
     const state = adminStates.get(ctx.from.id);
+
     if (!state || state.step !== "WAIT_CAT") {
       await ctx.answerCbQuery("Sessiya muddati o'tgan");
       return;
     }
 
-    const catIndex = Number(ctx.match[1]);
-    const catList = state.categoriesList || DEFAULT_CATEGORIES;
-    const selectedCat = catList[catIndex];
+    const categoryIndex = Number(ctx.match[1]);
+    const categories = state.categoriesList || DEFAULT_CATEGORIES;
+    const selectedCategory = categories[categoryIndex];
 
-    if (!selectedCat) {
+    if (!selectedCategory) {
       await ctx.answerCbQuery("Kategoriya topilmadi");
       return;
     }
 
-    await saveMenuItem(selectedCat, state.name, state.price);
+    await saveMenuItem(selectedCategory, state.name, state.price);
     clearState(ctx.from.id);
 
     await ctx.answerCbQuery();
+
     await ctx.reply(
-      `✅ "${state.name}" (${selectedCat}) muvaffaqiyatli saqlandi!`,
+      `✅ "${state.name}" (${selectedCategory}) muvaffaqiyatli saqlandi!`,
       getMainMenu(ctx.from.id)
     );
   });
 
-  // MATNLI XABARLARNI TUTIB OLISH
+  // TEXT INPUTS
   bot.on("text", async (ctx, next) => {
     if (!isAdmin(ctx.from.id)) return next();
 
     const state = adminStates.get(ctx.from.id);
     if (!state) return next();
 
-    // 1. Yangi nom kiritish
+    const inputText = ctx.message.text.trim();
+
+    // Yangi taom nomi
     if (state.step === "WAIT_NAME") {
-      state.name = ctx.message.text.trim();
+      if (!inputText) {
+        return ctx.reply("Taom nomini bo'sh qoldirmang.");
+      }
+
+      state.name = inputText;
       state.step = "WAIT_PRICE";
       adminStates.set(ctx.from.id, state);
 
       return ctx.reply(
         `"${state.name}" narxini kiriting:`,
-        Markup.inlineKeyboard([[Markup.button.callback("❌ Bekor qilish", "admin_cancel")]])
+        cancelButton()
       );
     }
 
-    // 2. Yangi narx kiritish va kategoriya tanlash
+    // Yangi taom narxi
     if (state.step === "WAIT_PRICE") {
-      const price = Number(ctx.message.text.replace(/\D/g, ""));
-      if (!price || isNaN(price)) {
-        return ctx.reply("Iltimos, faqat to'g'ri raqam kiriting!");
+      const price = Number(inputText.replace(/[^\d]/g, ""));
+
+      if (!Number.isSafeInteger(price) || price <= 0) {
+        return ctx.reply("Iltimos, to'g'ri narx kiriting. Masalan: 25000");
       }
 
       state.price = price;
       state.step = "WAIT_CAT";
 
-      const MENU = await loadMenu();
-      const dbCategories = Object.keys(MENU);
-      const activeCategories = dbCategories.length > 0 ? dbCategories : DEFAULT_CATEGORIES;
-      state.categoriesList = activeCategories;
+      const menu = await loadMenu();
+      const dbCategories = Object.keys(menu);
+      const activeCategories =
+        dbCategories.length > 0 ? dbCategories : DEFAULT_CATEGORIES;
 
+      state.categoriesList = activeCategories;
       adminStates.set(ctx.from.id, state);
 
-      const catButtons = activeCategories.map((c, i) => [
-        Markup.button.callback(c, `add_cat:${i}`),
+      const categoryButtons = activeCategories.map((category, index) => [
+        Markup.button.callback(category, `add_cat:${index}`),
       ]);
-      catButtons.push([Markup.button.callback("❌ Bekor qilish", "admin_cancel")]);
 
-      return ctx.reply("Kategoriyani tanlang:", Markup.inlineKeyboard(catButtons));
+      categoryButtons.push([
+        Markup.button.callback("❌ Bekor qilish", "admin_cancel"),
+      ]);
+
+      return ctx.reply(
+        "Kategoriyani tanlang:",
+        Markup.inlineKeyboard(categoryButtons)
+      );
     }
 
-    // 3. Nomi o'zgartirish
+    // Mavjud taom nomini yangilash
     if (state.step === "WAIT_NEW_NAME") {
-      const newName = ctx.message.text.trim();
-      await updateMenuItem(state.itemId, { name: newName });
+      const newName = inputText;
+
+      if (!newName) {
+        return ctx.reply("Taom nomini bo'sh qoldirmang.");
+      }
+
+      // db.js funksiyasi: updateMenuItem(itemId, newName, newPrice)
+      await updateMenuItem(state.itemId, newName, undefined);
       clearState(ctx.from.id);
 
       return ctx.reply(
@@ -251,14 +324,16 @@ function setupAdminHandlers(bot, getMainMenu) {
       );
     }
 
-    // 4. Narxini o'zgartirish
+    // Mavjud taom narxini yangilash
     if (state.step === "WAIT_NEW_PRICE") {
-      const newPrice = Number(ctx.message.text.replace(/\D/g, ""));
-      if (!newPrice || isNaN(newPrice)) {
-        return ctx.reply("Iltimos, faqat to'g'ri raqam kiriting!");
+      const newPrice = Number(inputText.replace(/[^\d]/g, ""));
+
+      if (!Number.isSafeInteger(newPrice) || newPrice <= 0) {
+        return ctx.reply("Iltimos, to'g'ri narx kiriting. Masalan: 25000");
       }
 
-      await updateMenuItem(state.itemId, { price: newPrice });
+      // db.js funksiyasi: updateMenuItem(itemId, newName, newPrice)
+      await updateMenuItem(state.itemId, undefined, newPrice);
       clearState(ctx.from.id);
 
       return ctx.reply(

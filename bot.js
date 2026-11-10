@@ -1,4 +1,3 @@
-
 const { Telegraf, Markup } = require("telegraf");
 const http = require("http");
 
@@ -9,8 +8,11 @@ const {
   CAFE_INFO,
 } = require("./config");
 
-const { loadMenu, getNextOrderId } = require("./db");
-
+const {
+  loadMenu,
+  getNextOrderId,
+  saveOrder,
+} = require("./db");
 const {
   getMainMenu,
   buildCategoryKeyboard,

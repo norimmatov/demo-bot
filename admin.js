@@ -30,7 +30,7 @@ function setupAdminHandlers(bot, getMainMenu) {
 
     for (const [cat, items] of Object.entries(MENU)) {
       text += `📌 **${cat}**:\n`;
-      if (items.length === 0) {
+      if (!items || items.length === 0) {
         text += "  _(Bo'sh)_\n";
       } else {
         items.forEach((it) => {
@@ -117,6 +117,7 @@ function setupAdminHandlers(bot, getMainMenu) {
     await ctx.reply(`❌ Taom taomnomadan o'chirildi!`, getMainMenu(ctx.from.id));
   });
 
+  // MATNLI XABARLARNI QABUL QILISH (QO'SHISH VA TAHRIRLASH)
   bot.on("text", async (ctx, next) => {
     const state = adminStates.get(ctx.from.id);
     if (!state || !isAdmin(ctx.from.id)) return next();
@@ -136,9 +137,20 @@ function setupAdminHandlers(bot, getMainMenu) {
       adminStates.set(ctx.from.id, state);
 
       const MENU = await loadMenu();
+      const categories = Object.keys(MENU);
+
+      // Agar bazada hali umumiy kategoriya bo'lmasa, standart kategoriyalarni beramiz
+      const defaultCategories = ["☕ Ichimliklar", "🍰 Shirinliklar", "🍔 Taomlar"];
+      const catList = categories.length > 0 ? categories : defaultCategories;
+
+      // KATEGORIYA TUGMALARINI TO'G'RI YASASH
+      const catButtons = catList.map((c, i) => [
+        Markup.button.callback(c, `add_cat:${i}`)
+      ]);
+
       return ctx.reply(
         "Kategoriyani tanlang:",
-        Markup.inlineKeyboard(Object.keys(MENU).map((c, i) => [Markup.button.callback(c, "add_cat:" + i)]))
+        Markup.inlineKeyboard(catButtons)
       );
     }
 
@@ -160,18 +172,27 @@ function setupAdminHandlers(bot, getMainMenu) {
     return next();
   });
 
+  // KATEGORIYA BOSILGANDA SAQLASH
   bot.action(/^add_cat:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return;
     const state = adminStates.get(ctx.from.id);
     if (!state || state.step !== "WAIT_CAT") return;
 
     const MENU = await loadMenu();
-    const cat = Object.keys(MENU)[Number(ctx.match[1])];
-    await saveMenuItem(cat, state.name, state.price);
+    const categories = Object.keys(MENU);
+    const defaultCategories = ["☕ Ichimliklar", "🍰 Shirinliklar", "🍔 Taomlar"];
+    const catList = categories.length > 0 ? categories : defaultCategories;
 
+    const catIndex = Number(ctx.match[1]);
+    const cat = catList[catIndex];
+
+    if (!cat) return ctx.answerCbQuery("Kategoriya topilmadi");
+
+    await saveMenuItem(cat, state.name, state.price);
     adminStates.delete(ctx.from.id);
+
     await ctx.answerCbQuery();
-    await ctx.reply(`✅ "${state.name}" taomnomaga saqlandi!`, getMainMenu(ctx.from.id));
+    await ctx.reply(`✅ "${state.name}" (${cat}) taomnomaga saqlandi!`, getMainMenu(ctx.from.id));
   });
 }
 

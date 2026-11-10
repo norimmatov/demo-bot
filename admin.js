@@ -8,7 +8,7 @@ function isAdmin(userId) {
   return ADMIN_ID && Number(userId) === Number(ADMIN_ID);
 }
 
-// Standart kategoriyalar ro'yxati (har doim barqaror ishlashi uchun)
+// Standart kategoriyalar ro'yxati (Baza bo'sh bo'lganda ham barqaror ishlashi uchun)
 const DEFAULT_CATEGORIES = ["☕ Ichimliklar", "🍰 Shirinliklar", "🍔 Taomlar"];
 
 function setupAdminHandlers(bot, getMainMenu) {
@@ -141,9 +141,8 @@ function setupAdminHandlers(bot, getMainMenu) {
       const MENU = await loadMenu();
       const dbCategories = Object.keys(MENU);
 
-      // Agar bazada bor bo'lsa o'shani, bo'lmasa standart ro'yxatni olamiz
       const activeCategories = dbCategories.length > 0 ? dbCategories : DEFAULT_CATEGORIES;
-      state.categoriesList = activeCategories; // Massivni state-ga saqlab qo'yamiz!
+      state.categoriesList = activeCategories;
       adminStates.set(ctx.from.id, state);
 
       const catButtons = activeCategories.map((c, i) => [
@@ -174,7 +173,7 @@ function setupAdminHandlers(bot, getMainMenu) {
     return next();
   });
 
-  // KATEGORIYA BOSILGANDA BAZAGA SAQLASH (TUZATILGAN QISM)
+  // KATEGORIYA BOSILGANDA SAQLASH
   bot.action(/^add_cat:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return;
     const state = adminStates.get(ctx.from.id);
@@ -189,7 +188,6 @@ function setupAdminHandlers(bot, getMainMenu) {
       return;
     }
 
-    // Bazaga saqlaymiz
     await saveMenuItem(selectedCat, state.name, state.price);
     adminStates.delete(ctx.from.id);
 

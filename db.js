@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 const { createClient } = require("redis");
 
@@ -445,26 +444,41 @@ async function deleteMenuItem(itemId) {
 // GENERATE ORDER ID
 // =====================================
 
+
 async function getNextOrderId() {
   await connectDB();
 
   const counterId = `order_id:${RESTAURANT_ID}`;
 
+  try {
+    await OrderCounter.updateOne(
+      { _id: counterId },
+      {
+        $setOnInsert: {
+          lastOrderId: 1000,
+        },
+      },
+      { upsert: true }
+    );
+  } catch (err) {
+    if (err.code !== 11000) {
+      throw err;
+    }
+  }
+
   const counter = await OrderCounter.findOneAndUpdate(
     { _id: counterId },
-    {
-      $inc: { lastOrderId: 1 },
-      $setOnInsert: { lastOrderId: 1000 },
-    },
-    {
-      new: true,
-      upsert: true,
-      setDefaultsOnInsert: false,
-    }
+    { $inc: { lastOrderId: 1 } },
+    { new: true }
   ).lean();
+
+  if (!counter) {
+    throw new Error("Buyurtma raqamini yaratib bo'lmadi!");
+  }
 
   return `ORD-${counter.lastOrderId}`;
 }
+
 
 // =====================================
 // SAVE ORDER

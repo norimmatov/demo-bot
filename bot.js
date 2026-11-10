@@ -607,6 +607,24 @@ bot.action(/^pay:(naqd|karta)$/, async (ctx) => {
       `━━━━━━━━━━━━━━━━━━\n` +
       `💰 JAMI SUMMA: ${info.totalFmt}`;
 
+
+    
+    // BUYURTMANI MONGODB GA SAQLASH
+
+    await saveOrder({
+      orderId,
+      telegramId: uid,
+      clientName,
+      phone,
+      address,
+      locationCoords: state.locationCoords || undefined,
+      payment: payType,
+      itemsText: info.linesText,
+      total: info.total,
+      status: "accepted",
+    });
+
+    
     await ctx.answerCbQuery();
 
     // Mijozga chek

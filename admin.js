@@ -8,6 +8,9 @@ function isAdmin(userId) {
   return ADMIN_ID && Number(userId) === Number(ADMIN_ID);
 }
 
+// Standart kategoriyalar ro'yxati (har doim barqaror ishlashi uchun)
+const DEFAULT_CATEGORIES = ["☕ Ichimliklar", "🍰 Shirinliklar", "🍔 Taomlar"];
+
 function setupAdminHandlers(bot, getMainMenu) {
   bot.hears("⚙️ Admin Panel", (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.reply("Siz admin emassiz ❌");
@@ -117,7 +120,7 @@ function setupAdminHandlers(bot, getMainMenu) {
     await ctx.reply(`❌ Taom taomnomadan o'chirildi!`, getMainMenu(ctx.from.id));
   });
 
-  // MATNLI XABARLARNI QABUL QILISH (QO'SHISH VA TAHRIRLASH)
+  // MATNLI XABARLARNI QABUL QILISH (NAME & PRICE)
   bot.on("text", async (ctx, next) => {
     const state = adminStates.get(ctx.from.id);
     if (!state || !isAdmin(ctx.from.id)) return next();
@@ -134,17 +137,16 @@ function setupAdminHandlers(bot, getMainMenu) {
       if (!price) return ctx.reply("Iltimos, faqat raqam kiriting!");
       state.price = price;
       state.step = "WAIT_CAT";
-      adminStates.set(ctx.from.id, state);
 
       const MENU = await loadMenu();
-      const categories = Object.keys(MENU);
+      const dbCategories = Object.keys(MENU);
 
-      // Agar bazada hali umumiy kategoriya bo'lmasa, standart kategoriyalarni beramiz
-      const defaultCategories = ["☕ Ichimliklar", "🍰 Shirinliklar", "🍔 Taomlar"];
-      const catList = categories.length > 0 ? categories : defaultCategories;
+      // Agar bazada bor bo'lsa o'shani, bo'lmasa standart ro'yxatni olamiz
+      const activeCategories = dbCategories.length > 0 ? dbCategories : DEFAULT_CATEGORIES;
+      state.categoriesList = activeCategories; // Massivni state-ga saqlab qo'yamiz!
+      adminStates.set(ctx.from.id, state);
 
-      // KATEGORIYA TUGMALARINI TO'G'RI YASASH
-      const catButtons = catList.map((c, i) => [
+      const catButtons = activeCategories.map((c, i) => [
         Markup.button.callback(c, `add_cat:${i}`)
       ]);
 
@@ -172,27 +174,27 @@ function setupAdminHandlers(bot, getMainMenu) {
     return next();
   });
 
-  // KATEGORIYA BOSILGANDA SAQLASH
+  // KATEGORIYA BOSILGANDA BAZAGA SAQLASH (TUZATILGAN QISM)
   bot.action(/^add_cat:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from.id)) return;
     const state = adminStates.get(ctx.from.id);
     if (!state || state.step !== "WAIT_CAT") return;
 
-    const MENU = await loadMenu();
-    const categories = Object.keys(MENU);
-    const defaultCategories = ["☕ Ichimliklar", "🍰 Shirinliklar", "🍔 Taomlar"];
-    const catList = categories.length > 0 ? categories : defaultCategories;
-
     const catIndex = Number(ctx.match[1]);
-    const cat = catList[catIndex];
+    const catList = state.categoriesList || DEFAULT_CATEGORIES;
+    const selectedCat = catList[catIndex];
 
-    if (!cat) return ctx.answerCbQuery("Kategoriya topilmadi");
+    if (!selectedCat) {
+      await ctx.answerCbQuery("Kategoriya topilmadi");
+      return;
+    }
 
-    await saveMenuItem(cat, state.name, state.price);
+    // Bazaga saqlaymiz
+    await saveMenuItem(selectedCat, state.name, state.price);
     adminStates.delete(ctx.from.id);
 
     await ctx.answerCbQuery();
-    await ctx.reply(`✅ "${state.name}" (${cat}) taomnomaga saqlandi!`, getMainMenu(ctx.from.id));
+    await ctx.reply(`✅ "${state.name}" (${selectedCat}) muvaffaqiyatli saqlandi!`, getMainMenu(ctx.from.id));
   });
 }
 

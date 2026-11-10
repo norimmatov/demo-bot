@@ -25,16 +25,9 @@ const orderCounterSchema = new mongoose.Schema({
 const MenuItem = mongoose.model("MenuItem", menuSchema);
 const OrderCounter = mongoose.model("OrderCounter", orderCounterSchema);
 
-// --- IN-MEMORY CACHE ---
-let cachedMenu = null;
-
-async function loadMenu(forceRefresh = false) {
+// HAR SAFAR TO'G'RIDAN-TO'G'RI BAZADAN O'QISH (KESHSISZ)
+async function loadMenu() {
   try {
-    // Agar kesh bo'lsa va majburiy yangilash so'ralmagan bo'lsa, xotiradan beramiz
-    if (cachedMenu && !forceRefresh) {
-      return cachedMenu;
-    }
-
     const items = await MenuItem.find({});
     const menu = {};
     items.forEach((it) => {
@@ -49,19 +42,17 @@ async function loadMenu(forceRefresh = false) {
         { id: "t1", category: "🍔 Taomlar", name: "Burger", price: 35000 },
       ];
       await MenuItem.insertMany(defaultItems);
-      cachedMenu = {
+      return {
         "☕ Ichimliklar": [{ id: "d1", name: "Americano", price: 18000 }],
         "🍰 Shirinliklar": [{ id: "s1", name: "Cheesecake", price: 25000 }],
         "🍔 Taomlar": [{ id: "t1", name: "Burger", price: 35000 }],
       };
-      return cachedMenu;
     }
 
-    cachedMenu = menu;
-    return cachedMenu;
+    return menu;
   } catch (e) {
     console.error("Menu o'qishda xato:", e);
-    return cachedMenu || {};
+    return {};
   }
 }
 
@@ -74,11 +65,6 @@ async function saveMenuItem(category, name, price) {
       price: price,
     });
     await newItem.save();
-    
-    // Keshni majburiy tozalab, bazadan yangidan o'qiymiz
-    cachedMenu = null;
-    await loadMenu(true);
-    
     return newItem;
   } catch (e) {
     console.error("Taom saqlashda xato:", e);
@@ -91,10 +77,6 @@ async function updateMenuItem(itemId, newName, newPrice) {
     if (newName) updateData.name = newName;
     if (newPrice) updateData.price = newPrice;
     await MenuItem.updateOne({ id: itemId }, { $set: updateData });
-    
-    // Keshni tozalash
-    cachedMenu = null;
-    await loadMenu(true);
   } catch (e) {
     console.error("Taom tahrirlashda xato:", e);
   }
@@ -103,10 +85,6 @@ async function updateMenuItem(itemId, newName, newPrice) {
 async function deleteMenuItem(itemId) {
   try {
     await MenuItem.deleteOne({ id: itemId });
-    
-    // Keshni tozalash
-    cachedMenu = null;
-    await loadMenu(true);
   } catch (e) {
     console.error("Taom o'chirishda xato:", e);
   }

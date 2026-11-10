@@ -7,7 +7,7 @@ if (MONGO_URI) {
     .then(() => console.log("MongoDB ga muvaffaqiyatli ulandik ✅"))
     .catch((err) => console.error("MongoDB ulanish xatosi:", err));
 } else {
-  console.log("MONGO_URI topilmadi!");
+  console.log("MONGO_URI ko'rsatilmadi!");
 }
 
 const menuSchema = new mongoose.Schema({
@@ -25,8 +25,16 @@ const orderCounterSchema = new mongoose.Schema({
 const MenuItem = mongoose.model("MenuItem", menuSchema);
 const OrderCounter = mongoose.model("OrderCounter", orderCounterSchema);
 
-async function loadMenu() {
+// --- IN-MEMORY CACHE (KESHLASHTIRISH) ---
+let cachedMenu = null;
+
+async function loadMenu(forceRefresh = false) {
   try {
+    // Agar keshda menyu bo'lsa va majburiy yangilash so'ralmagan bo'lsa, xotiradan beramiz (Juda tez!)
+    if (cachedMenu && !forceRefresh) {
+      return cachedMenu;
+    }
+
     const items = await MenuItem.find({});
     const menu = {};
     items.forEach((it) => {
@@ -41,17 +49,19 @@ async function loadMenu() {
         { id: "t1", category: "🍔 Taomlar", name: "Burger", price: 35000 },
       ];
       await MenuItem.insertMany(defaultItems);
-      return {
+      cachedMenu = {
         "☕ Ichimliklar": [{ id: "d1", name: "Americano", price: 18000 }],
         "🍰 Shirinliklar": [{ id: "s1", name: "Cheesecake", price: 25000 }],
         "🍔 Taomlar": [{ id: "t1", name: "Burger", price: 35000 }],
       };
+      return cachedMenu;
     }
 
-    return menu;
+    cachedMenu = menu;
+    return cachedMenu;
   } catch (e) {
     console.error("Menu o'qishda xato:", e);
-    return {};
+    return cachedMenu || {};
   }
 }
 
@@ -64,6 +74,7 @@ async function saveMenuItem(category, name, price) {
       price: price,
     });
     await newItem.save();
+    await loadMenu(true); // Bazaga saqlangach keshni yangilaymiz
     return newItem;
   } catch (e) {
     console.error("Taom saqlashda xato:", e);
@@ -76,6 +87,7 @@ async function updateMenuItem(itemId, newName, newPrice) {
     if (newName) updateData.name = newName;
     if (newPrice) updateData.price = newPrice;
     await MenuItem.updateOne({ id: itemId }, { $set: updateData });
+    await loadMenu(true); // Tahrirlangach keshni yangilaymiz
   } catch (e) {
     console.error("Taom tahrirlashda xato:", e);
   }
@@ -84,6 +96,7 @@ async function updateMenuItem(itemId, newName, newPrice) {
 async function deleteMenuItem(itemId) {
   try {
     await MenuItem.deleteOne({ id: itemId });
+    await loadMenu(true); // O'chirilgach keshni yangilaymiz
   } catch (e) {
     console.error("Taom o'chirishda xato:", e);
   }
